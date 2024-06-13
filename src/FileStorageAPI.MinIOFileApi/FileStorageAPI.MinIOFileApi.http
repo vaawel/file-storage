@@ -1,0 +1,6 @@
+@FileStorageAPI.MinIOFileApi_HostAddress = http://localhost:5052
+
+GET {{FileStorageAPI.MinIOFileApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
