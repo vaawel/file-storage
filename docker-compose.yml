@@ -7,6 +7,11 @@ services:
     build:
       context: ./
       dockerfile: config/services/app/app.dockerfile
+    environment:
+      - MinIO:AccessKey=9Tu1iiCG2JasBu065Ahv
+      - MinIO:BucketName=landing
+      - MinIO:Endpoint=s3.box.vaawel.online
+      - MinIO:SecretKey=QW8TB7a4uzxdmkWHhZtMGSUBYNb6ykUIbju27dVO
     ports:
       - "5002:8080"
     networks:
