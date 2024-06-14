@@ -14,23 +14,25 @@ namespace FileStorageAPI.MinIOFileApi.Controllers;
 [ApiController]
 public class FileController(IMinioClient minioClient, IOptions<MinIOOptions> options) : ControllerBase
 {
-    private readonly string _defaultBucketName = options.Value.BucketName;
+    private readonly IMinioClient _minioClient = minioClient ?? throw new ArgumentNullException(nameof(minioClient));
+    private readonly string _defaultBucketName = options.Value.BucketName ?? throw new ArgumentNullException(nameof(options.Value.BucketName));
 
     [HttpGet("{fileName}")]
-    public async Task<GetObjectReply> DownloadFile(string fileName, [FromQuery] string? bucketName)
+    public async Task<IActionResult> DownloadFile(string fileName, [FromQuery] string? bucketName)
     {
         bucketName ??= _defaultBucketName;
         var memoryStream = new MemoryStream();
 
         try
         {
-            var objectStat= await minioClient.StatObjectAsync(new StatObjectArgs()
+            var objectStat = await _minioClient.StatObjectAsync(new StatObjectArgs()
                 .WithBucket(bucketName)
                 .WithObject(fileName)
             );
             if (objectStat == null || objectStat.DeleteMarker)
-                throw new Exception("Object Not Found or Deleted");
-            await minioClient.GetObjectAsync(new GetObjectArgs()
+                return NotFound(new { message = "Object not found or deleted" });
+
+            await _minioClient.GetObjectAsync(new GetObjectArgs()
                 .WithBucket(bucketName)
                 .WithObject(fileName)
                 .WithCallbackStream(stream =>
@@ -40,41 +42,52 @@ public class FileController(IMinioClient minioClient, IOptions<MinIOOptions> opt
             );
 
             memoryStream.Seek(0, SeekOrigin.Begin);
-            return await Task.FromResult(new GetObjectReply()
+            var fileBytes = memoryStream.ToArray();
+            var base64String = Convert.ToBase64String(fileBytes);
+
+            return Ok(new GetObjectReply
             {
-                ByteArray = memoryStream.ToArray(),
+                ByteArray = fileBytes,
                 ObjectStat = objectStat,
-                Base64String = Convert.ToBase64String(memoryStream.ToArray())
+                Base64String = base64String
             });
+        }
+        catch (MinioException minioEx)
+        {
+            return StatusCode(500, new { error = minioEx.Message });
         }
         catch (Exception ex)
         {
-            throw new InternalServerException(ex.Message);
+            return StatusCode(500, new { error = ex.Message });
         }
     }
 
     [HttpPost("upload")]
     public async Task<IActionResult> UploadFile(IFormFile file, [FromQuery] string? bucketName, [FromQuery] string? path)
     {
-        if (file.Length == 0)
-            return BadRequest("File not selected.");
+        if (file == null || file.Length == 0)
+            return BadRequest(new { message = "File not selected." });
 
         bucketName ??= _defaultBucketName;
         var fileName = file.FileName;
         var objectName = string.IsNullOrEmpty(path) ? fileName : Path.Combine(path, fileName).Replace("\\", "/");
+
         try
         {
-            await using (var stream = file.OpenReadStream())
-            {
-                PutObjectArgs putObjectArgs = new PutObjectArgs()
-                    .WithBucket(bucketName)
-                    .WithObject(objectName)
-                    .WithStreamData(stream)
-                    .WithObjectSize(stream.Length)
-                    .WithContentType(file.ContentType);
-                await minioClient.PutObjectAsync(putObjectArgs);
-            }
+            await using var stream = file.OpenReadStream();
+            var putObjectArgs = new PutObjectArgs()
+                .WithBucket(bucketName)
+                .WithObject(objectName)
+                .WithStreamData(stream)
+                .WithObjectSize(stream.Length)
+                .WithContentType(file.ContentType);
+
+            await _minioClient.PutObjectAsync(putObjectArgs);
             return Ok(new { File = $"{bucketName}/{objectName}" });
+        }
+        catch (MinioException minioEx)
+        {
+            return StatusCode(500, new { error = minioEx.Message });
         }
         catch (Exception ex)
         {
@@ -86,13 +99,19 @@ public class FileController(IMinioClient minioClient, IOptions<MinIOOptions> opt
     public async Task<IActionResult> DeleteFile(string fileName, [FromQuery] string? bucketName)
     {
         bucketName ??= _defaultBucketName;
+        
         try
         {
-            RemoveObjectArgs removeObjectArgs = new RemoveObjectArgs()
+            var removeObjectArgs = new RemoveObjectArgs()
                 .WithBucket(bucketName)
                 .WithObject(fileName);
-            await minioClient.RemoveObjectAsync(removeObjectArgs);
+
+            await _minioClient.RemoveObjectAsync(removeObjectArgs);
             return NoContent();
+        }
+        catch (MinioException minioEx)
+        {
+            return StatusCode(500, new { error = minioEx.Message });
         }
         catch (Exception ex)
         {
