@@ -74,7 +74,7 @@ public class FileController(IMinioClient minioClient, IOptions<MinIOOptions> opt
                     .WithContentType(file.ContentType);
                 await minioClient.PutObjectAsync(putObjectArgs);
             }
-            return Ok(new { FileName = fileName, BucketName = bucketName });
+            return Ok(new { File = $"{bucketName}/{objectName}" });
         }
         catch (Exception ex)
         {
