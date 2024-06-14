@@ -42,8 +42,9 @@ public class FileController(IMinioClient minioClient, IOptions<MinIOOptions> opt
             memoryStream.Seek(0, SeekOrigin.Begin);
             return await Task.FromResult(new GetObjectReply()
             {
-                Data = memoryStream.ToArray(),
-                ObjectStat = objectStat
+                ByteArray = memoryStream.ToArray(),
+                ObjectStat = objectStat,
+                Base64String = Convert.ToBase64String(memoryStream.ToArray())
             });
         }
         catch (Exception ex)
